@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{SCENE_TITLE}} — 3D Preview</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #1a1a2e; color: #e0e0e0; font-family: system-ui, sans-serif; overflow: hidden; }
+    #canvas-container { width: 100vw; height: 100vh; }
+    #overlay {
+      position: fixed;
+      top: 16px;
+      left: 16px;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(6px);
+      border-radius: 8px;
+      padding: 12px 16px;
+      pointer-events: none;
+      line-height: 1.6;
+    }
+    #overlay h2 { font-size: 1rem; font-weight: 600; margin-bottom: 4px; color: #fff; }
+    #overlay p  { font-size: 0.8rem; color: #aaa; }
+    #controls {
+      position: fixed;
+      bottom: 16px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.5);
+      backdrop-filter: blur(6px);
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 0.75rem;
+      color: #888;
+      pointer-events: none;
+    }
+    #terrain-controls {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(6px);
+      border-radius: 8px;
+      padding: 12px 16px;
+      min-width: 180px;
+    }
+    #terrain-controls label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.8rem;
+      color: #aaa;
+      margin-bottom: 6px;
+      user-select: none;
+    }
+    #terrain-controls label span { color: #fff; font-weight: 600; }
+    #opacity-slider {
+      width: 100%;
+      accent-color: #e66414;
+      cursor: pointer;
+    }
+    #loading {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      color: #aaa;
+      font-size: 0.9rem;
+    }
+    #loading .spinner {
+      width: 40px; height: 40px;
+      border: 3px solid #333;
+      border-top-color: #e66414;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 12px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div id="canvas-container"></div>
+
+  <div id="overlay">
+    <h2>{{SCENE_TITLE}}</h2>
+    <p>Distance: {{DISTANCE_KM}} km &nbsp;·&nbsp; Elevation gain: {{ELE_GAIN_M}} m</p>
+    <p style="margin-top:4px; font-size:0.7rem; color:#666;">
+      Terrain: OBJ+MTL (satellite texture) &nbsp;·&nbsp; Track: STL (orange)
+    </p>
+  </div>
+
+  <div id="controls">Left-drag: rotate &nbsp;·&nbsp; Scroll: zoom &nbsp;·&nbsp; Right-drag: pan</div>
+
+  <div id="terrain-controls">
+    <label>
+      Terrain opacity
+      <span id="opacity-value">100%</span>
+    </label>
+    <input id="opacity-slider" type="range" min="0" max="100" value="100" step="1" />
+  </div>
+
+  <div id="loading" id="loading">
+    <div class="spinner"></div>
+    Loading 3D models…
+  </div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { OBJLoader }     from 'three/addons/loaders/OBJLoader.js';
+    import { MTLLoader }     from 'three/addons/loaders/MTLLoader.js';
+    import { STLLoader }     from 'three/addons/loaders/STLLoader.js';
+
+    // ── Renderer ────────────────────────────────────────────────────────────────
+    const container = document.getElementById('canvas-container');
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.shadowMap.enabled = true;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    container.appendChild(renderer.domElement);
+
+    // ── Scene & Camera ──────────────────────────────────────────────────────────
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x1a1a2e);
+
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 100000);
+
+    // ── Lights ──────────────────────────────────────────────────────────────────
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+
+    const sun = new THREE.DirectionalLight(0xfff5e0, 1.4);
+    sun.position.set(1, -0.5, 2).normalize();
+    sun.castShadow = true;
+    scene.add(sun);
+
+    const fill = new THREE.DirectionalLight(0xc0d8ff, 0.4);
+    fill.position.set(-1, 1, 0.5).normalize();
+    scene.add(fill);
+
+    // ── Controls ────────────────────────────────────────────────────────────────
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.08;
+    controls.screenSpacePanning = true;
+
+    // ── Loading tracker ──────────────────────────────────────────────────────────
+    const loadingEl = document.getElementById('loading');
+    let loaded = 0;
+    function onLoaded() {
+      loaded++;
+      if (loaded >= 2) {
+        loadingEl.style.display = 'none';
+        fitCamera();
+      }
+    }
+
+    // ── Terrain opacity control ───────────────────────────────────────────────
+    const terrainMaterials = [];
+    const opacitySlider = document.getElementById('opacity-slider');
+    const opacityValue  = document.getElementById('opacity-value');
+
+    opacitySlider.addEventListener('input', () => {
+      const pct = parseInt(opacitySlider.value, 10);
+      const opacity = pct / 100;
+      opacityValue.textContent = pct + '%';
+      for (const mat of terrainMaterials) {
+        mat.opacity = opacity;
+        mat.transparent = opacity < 1.0;
+        mat.needsUpdate = true;
+      }
+    });
+
+    // ── Load terrain (OBJ + MTL) ─────────────────────────────────────────────────
+    const mtlLoader = new MTLLoader();
+    mtlLoader.setPath('./');
+    mtlLoader.load(
+      '{{TERRAIN_OBJ_PATH}}'.replace('.obj', '.mtl'),
+      (materials) => {
+        materials.preload();
+        const objLoader = new OBJLoader();
+        objLoader.setMaterials(materials);
+        objLoader.setPath('./');
+        objLoader.load(
+          '{{TERRAIN_OBJ_PATH}}',
+          (object) => {
+            object.traverse((child) => {
+              if (child.isMesh) {
+                child.receiveShadow = true;
+                const mats = Array.isArray(child.material) ? child.material : [child.material];
+                for (const m of mats) terrainMaterials.push(m);
+              }
+            });
+            scene.add(object);
+            onLoaded();
+          },
+          undefined,
+          (err) => { console.warn('OBJ load error:', err); onLoaded(); }
+        );
+      },
+      undefined,
+      () => {
+        // MTL failed — load OBJ without material
+        const objLoader = new OBJLoader();
+        objLoader.setPath('./');
+        objLoader.load(
+          '{{TERRAIN_OBJ_PATH}}',
+          (object) => {
+            object.traverse((child) => {
+              if (child.isMesh) {
+                const mats = Array.isArray(child.material) ? child.material : [child.material];
+                for (const m of mats) terrainMaterials.push(m);
+              }
+            });
+            scene.add(object);
+            onLoaded();
+          },
+          undefined,
+          (err) => { console.warn('OBJ (no MTL) load error:', err); onLoaded(); }
+        );
+      }
+    );
+
+    // ── Load track (STL) ─────────────────────────────────────────────────────────
+    const stlLoader = new STLLoader();
+    stlLoader.load(
+      '{{TRACK_STL_PATH}}',
+      (geometry) => {
+        geometry.computeVertexNormals();
+        const mat = new THREE.MeshPhongMaterial({
+          color: 0xe66414,
+          shininess: 80,
+          specular: 0x552200,
+        });
+        const mesh = new THREE.Mesh(geometry, mat);
+        mesh.castShadow = true;
+        scene.add(mesh);
+        onLoaded();
+      },
+      undefined,
+      (err) => { console.warn('STL load error:', err); onLoaded(); }
+    );
+
+    // ── Auto-fit camera to combined bounding box ─────────────────────────────────
+    function fitCamera() {
+      const box = new THREE.Box3().setFromObject(scene);
+      if (box.isEmpty()) return;
+      const centre = box.getCenter(new THREE.Vector3());
+      const size   = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const fov    = camera.fov * (Math.PI / 180);
+      const dist   = Math.abs(maxDim / (2 * Math.tan(fov / 2))) * 1.8;
+
+      camera.position.set(centre.x, centre.y - dist * 0.6, centre.z + dist * 0.5);
+      camera.lookAt(centre);
+      camera.near = dist * 0.001;
+      camera.far  = dist * 20;
+      camera.updateProjectionMatrix();
+      controls.target.copy(centre);
+      controls.minDistance = dist * 0.05;
+      controls.maxDistance = dist * 10;
+      controls.update();
+    }
+
+    // ── Resize handler ───────────────────────────────────────────────────────────
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // ── Render loop ──────────────────────────────────────────────────────────────
+    (function animate() {
+      requestAnimationFrame(animate);
+      controls.update();
+      renderer.render(scene, camera);
+    })();
+  </script>
+</body>
+</html>

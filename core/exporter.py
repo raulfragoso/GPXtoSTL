@@ -148,20 +148,40 @@ def generate_viewer(
     template_path: str = "viewer/viewer_template.html",
 ) -> str:
     """
-    Fill the Three.js viewer template and write output/viewer.html.
+    Fill the Three.js viewer template with embedded asset data and write output/viewer.html.
+    Assets (OBJ, texture, STL) are base64-embedded so the file is self-contained and
+    works on Streamlit Cloud without a local file server.
     Returns the path of the written file.
     """
+    import base64
+    import json
+
     viewer_path = os.path.join(output_dir, "viewer.html")
 
     with open(template_path, "r", encoding="utf-8") as fh:
         html = fh.read()
 
+    # Read and embed the generated assets
+    obj_path = os.path.join(output_dir, "terrain.obj")
+    tex_path = os.path.join(output_dir, "terrain_texture.jpg")
+    stl_path = os.path.join(output_dir, "track.stl")
+
+    with open(obj_path, "r", encoding="utf-8") as f:
+        obj_text = f.read()
+    with open(tex_path, "rb") as f:
+        tex_b64 = base64.b64encode(f.read()).decode("ascii")
+    with open(stl_path, "rb") as f:
+        stl_b64 = base64.b64encode(f.read()).decode("ascii")
+
+    tex_data_uri = f"data:image/jpeg;base64,{tex_b64}"
+
     distance_km = total_distance_m / 1000
-    html = html.replace("{{TERRAIN_OBJ_PATH}}", "terrain.obj")
-    html = html.replace("{{TRACK_STL_PATH}}", "track.stl")
     html = html.replace("{{SCENE_TITLE}}", track_name)
     html = html.replace("{{DISTANCE_KM}}", f"{distance_km:.1f}")
     html = html.replace("{{ELE_GAIN_M}}", f"{ele_gain_m:.0f}")
+    html = html.replace("{{OBJ_JSON}}", json.dumps(obj_text))
+    html = html.replace("{{TEX_URI_JSON}}", json.dumps(tex_data_uri))
+    html = html.replace("{{STL_B64_JSON}}", json.dumps(stl_b64))
 
     with open(viewer_path, "w", encoding="utf-8") as fh:
         fh.write(html)

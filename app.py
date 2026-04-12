@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 import os
-import socket
 import tempfile
-import threading
-from http.server import HTTPServer, SimpleHTTPRequestHandler
 
 import numpy as np
 import streamlit as st
@@ -27,41 +24,6 @@ st.set_page_config(
     layout="wide",
 )
 
-
-# ── Local file server (serves output/ dir for the Three.js viewer) ────────────
-_server_cache: dict[str, int] = {}
-
-def _find_free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("", 0))
-        return s.getsockname()[1]
-
-def _start_file_server(directory: str) -> int:
-    """Start a background HTTP server serving `directory`. Returns port."""
-    if directory in _server_cache:
-        return _server_cache[directory]
-
-    port = _find_free_port()
-
-    class _Handler(SimpleHTTPRequestHandler):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, directory=directory, **kwargs)
-
-        def end_headers(self):
-            # Required so ES module imports work inside a sandboxed iframe
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.send_header("Cross-Origin-Opener-Policy", "same-origin")
-            self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
-            super().end_headers()
-
-        def log_message(self, fmt, *args):
-            pass  # suppress access logs
-
-    server = HTTPServer(("127.0.0.1", port), _Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    _server_cache[directory] = port
-    return port
 
 
 # ── Sidebar parameters ────────────────────────────────────────────────────────
@@ -348,16 +310,12 @@ if uploaded is not None:
         if os.path.exists(stl_path):
             dl_col4.download_button("track.stl", _read(stl_path), "track.stl", "application/octet-stream", key="dl_stl")
 
-        viewer_html = os.path.join(output_dir, "viewer.html")
-        if os.path.exists(viewer_html):
+        viewer_html_path = os.path.join(output_dir, "viewer.html")
+        if os.path.exists(viewer_html_path):
             st.subheader("3D Preview")
-            port = _start_file_server(output_dir)
-            viewer_url = f"http://127.0.0.1:{port}/viewer.html"
-            st.components.v1.iframe(viewer_url, height=600, scrolling=False)
-            st.caption(
-                f"Viewer served from `{output_dir}` on port {port}. "
-                "If the viewer is blank, allow mixed content in your browser."
-            )
+            with open(viewer_html_path, "r", encoding="utf-8") as _f:
+                viewer_html_content = _f.read()
+            st.components.v1.html(viewer_html_content, height=600, scrolling=False)
 
 else:
     st.info("Upload a GPX file above to get started.")

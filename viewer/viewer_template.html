@@ -100,10 +100,17 @@
     <input id="opacity-slider" type="range" min="0" max="100" value="100" step="1" />
   </div>
 
-  <div id="loading" id="loading">
+  <div id="loading">
     <div class="spinner"></div>
     Loading 3D models…
   </div>
+
+  <!-- Embedded asset data (injected by Python) -->
+  <script>
+    const OBJ_TEXT    = {{OBJ_JSON}};
+    const TEX_DATA_URI = {{TEX_URI_JSON}};
+    const STL_B64     = {{STL_B64_JSON}};
+  </script>
 
   <script type="importmap">
   {
@@ -118,7 +125,6 @@
     import * as THREE from 'three';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
     import { OBJLoader }     from 'three/addons/loaders/OBJLoader.js';
-    import { MTLLoader }     from 'three/addons/loaders/MTLLoader.js';
     import { STLLoader }     from 'three/addons/loaders/STLLoader.js';
 
     // ── Renderer ────────────────────────────────────────────────────────────────
@@ -137,14 +143,14 @@
     const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 100000);
 
     // ── Lights ──────────────────────────────────────────────────────────────────
-    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    scene.add(new THREE.AmbientLight(0xffffff, 1.0));
 
-    const sun = new THREE.DirectionalLight(0xfff5e0, 1.4);
+    const sun = new THREE.DirectionalLight(0xfff5e0, 0.8);
     sun.position.set(1, -0.5, 2).normalize();
     sun.castShadow = true;
     scene.add(sun);
 
-    const fill = new THREE.DirectionalLight(0xc0d8ff, 0.4);
+    const fill = new THREE.DirectionalLight(0xc0d8ff, 0.3);
     fill.position.set(-1, 1, 0.5).normalize();
     scene.add(fill);
 
@@ -181,75 +187,45 @@
       }
     });
 
-    // ── Load terrain (OBJ + MTL) ─────────────────────────────────────────────────
-    const mtlLoader = new MTLLoader();
-    mtlLoader.setPath('./');
-    mtlLoader.load(
-      '{{TERRAIN_OBJ_PATH}}'.replace('.obj', '.mtl'),
-      (materials) => {
-        materials.preload();
-        const objLoader = new OBJLoader();
-        objLoader.setMaterials(materials);
-        objLoader.setPath('./');
-        objLoader.load(
-          '{{TERRAIN_OBJ_PATH}}',
-          (object) => {
-            object.traverse((child) => {
-              if (child.isMesh) {
-                child.receiveShadow = true;
-                const mats = Array.isArray(child.material) ? child.material : [child.material];
-                for (const m of mats) terrainMaterials.push(m);
-              }
-            });
-            scene.add(object);
-            onLoaded();
-          },
-          undefined,
-          (err) => { console.warn('OBJ load error:', err); onLoaded(); }
-        );
-      },
-      undefined,
-      () => {
-        // MTL failed — load OBJ without material
-        const objLoader = new OBJLoader();
-        objLoader.setPath('./');
-        objLoader.load(
-          '{{TERRAIN_OBJ_PATH}}',
-          (object) => {
-            object.traverse((child) => {
-              if (child.isMesh) {
-                const mats = Array.isArray(child.material) ? child.material : [child.material];
-                for (const m of mats) terrainMaterials.push(m);
-              }
-            });
-            scene.add(object);
-            onLoaded();
-          },
-          undefined,
-          (err) => { console.warn('OBJ (no MTL) load error:', err); onLoaded(); }
-        );
-      }
-    );
+    // ── Load terrain (inline OBJ + embedded texture) ─────────────────────────
+    const textureLoader = new THREE.TextureLoader();
+    const texture = textureLoader.load(TEX_DATA_URI);
+    texture.colorSpace = THREE.SRGBColorSpace;
 
-    // ── Load track (STL) ─────────────────────────────────────────────────────────
+    // Strip the mtllib reference so OBJLoader doesn't try to fetch it
+    const objText = OBJ_TEXT.split('\n').filter(l => !l.startsWith('mtllib')).join('\n');
+
+    const objLoader = new OBJLoader();
+    const terrainObject = objLoader.parse(objText);
+    terrainObject.traverse((child) => {
+      if (child.isMesh) {
+        const mat = new THREE.MeshLambertMaterial({ map: texture });
+        child.material = mat;
+        child.receiveShadow = true;
+        terrainMaterials.push(mat);
+      }
+    });
+    scene.add(terrainObject);
+    onLoaded();
+
+    // ── Load track (inline STL) ───────────────────────────────────────────────
+    const stlBin = atob(STL_B64);
+    const stlBuf = new ArrayBuffer(stlBin.length);
+    const stlView = new Uint8Array(stlBuf);
+    for (let i = 0; i < stlBin.length; i++) stlView[i] = stlBin.charCodeAt(i);
+
     const stlLoader = new STLLoader();
-    stlLoader.load(
-      '{{TRACK_STL_PATH}}',
-      (geometry) => {
-        geometry.computeVertexNormals();
-        const mat = new THREE.MeshPhongMaterial({
-          color: 0xe66414,
-          shininess: 80,
-          specular: 0x552200,
-        });
-        const mesh = new THREE.Mesh(geometry, mat);
-        mesh.castShadow = true;
-        scene.add(mesh);
-        onLoaded();
-      },
-      undefined,
-      (err) => { console.warn('STL load error:', err); onLoaded(); }
-    );
+    const geometry = stlLoader.parse(stlBuf);
+    geometry.computeVertexNormals();
+    const trackMat = new THREE.MeshPhongMaterial({
+      color: 0xe66414,
+      shininess: 80,
+      specular: 0x552200,
+    });
+    const trackMesh = new THREE.Mesh(geometry, trackMat);
+    trackMesh.castShadow = true;
+    scene.add(trackMesh);
+    onLoaded();
 
     // ── Auto-fit camera to combined bounding box ─────────────────────────────────
     function fitCamera() {

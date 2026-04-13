@@ -161,18 +161,6 @@
     controls.dampingFactor = 0.08;
     controls.screenSpacePanning = true;
 
-    // ── Loading tracker ──────────────────────────────────────────────────────────
-    const loadingEl = document.getElementById('loading');
-    const totalAssets = FRAME_B64 ? 3 : 2;
-    let loaded = 0;
-    function onLoaded() {
-      loaded++;
-      if (loaded >= totalAssets) {
-        loadingEl.style.display = 'none';
-        fitCamera();
-      }
-    }
-
     // ── Terrain opacity control ───────────────────────────────────────────────
     const terrainMaterials = [];
     const opacitySlider = document.getElementById('opacity-slider');
@@ -194,11 +182,8 @@
     const texture = textureLoader.load(TEX_DATA_URI);
     texture.colorSpace = THREE.SRGBColorSpace;
 
-    // Strip the mtllib reference so OBJLoader doesn't try to fetch it
     const objText = OBJ_TEXT.split('\n').filter(l => !l.startsWith('mtllib')).join('\n');
-
-    const objLoader = new OBJLoader();
-    const terrainObject = objLoader.parse(objText);
+    const terrainObject = new OBJLoader().parse(objText);
     terrainObject.traverse((child) => {
       if (child.isMesh) {
         const mat = new THREE.MeshLambertMaterial({ map: texture });
@@ -208,45 +193,40 @@
       }
     });
     scene.add(terrainObject);
-    onLoaded();
 
     // ── Load track (inline STL) ───────────────────────────────────────────────
-    const stlBin = atob(STL_B64);
-    const stlBuf = new ArrayBuffer(stlBin.length);
-    const stlView = new Uint8Array(stlBuf);
-    for (let i = 0; i < stlBin.length; i++) stlView[i] = stlBin.charCodeAt(i);
+    function stlToMesh(b64, material) {
+      const bin = atob(b64);
+      const buf = new ArrayBuffer(bin.length);
+      const view = new Uint8Array(buf);
+      for (let i = 0; i < bin.length; i++) view[i] = bin.charCodeAt(i);
+      const geo = new STLLoader().parse(buf);
+      geo.computeVertexNormals();
+      return new THREE.Mesh(geo, material);
+    }
 
-    const stlLoader = new STLLoader();
-    const geometry = stlLoader.parse(stlBuf);
-    geometry.computeVertexNormals();
-    const trackMat = new THREE.MeshPhongMaterial({
-      color: 0xe66414,
-      shininess: 80,
-      specular: 0x552200,
-    });
-    const trackMesh = new THREE.Mesh(geometry, trackMat);
+    const trackMesh = stlToMesh(STL_B64, new THREE.MeshPhongMaterial({
+      color: 0xe66414, shininess: 80, specular: 0x552200,
+    }));
     trackMesh.castShadow = true;
     scene.add(trackMesh);
-    onLoaded();
 
-    // ── Load frame (inline STL, optional) ────────────────────────────────────────
+    // ── Load frame (inline STL, optional) ────────────────────────────────────
     if (FRAME_B64) {
-      const frameBin = atob(FRAME_B64);
-      const frameBuf = new ArrayBuffer(frameBin.length);
-      const frameView = new Uint8Array(frameBuf);
-      for (let i = 0; i < frameBin.length; i++) frameView[i] = frameBin.charCodeAt(i);
-
-      const frameGeo = new STLLoader().parse(frameBuf);
-      frameGeo.computeVertexNormals();
-      const frameMat = new THREE.MeshPhongMaterial({
-        color: 0xdddddd,
-        shininess: 40,
-        specular: 0x444444,
-      });
-      const frameMesh = new THREE.Mesh(frameGeo, frameMat);
-      scene.add(frameMesh);
-      onLoaded();
+      try {
+        const frameMesh = stlToMesh(FRAME_B64, new THREE.MeshPhongMaterial({
+          color: 0xdddddd, shininess: 40, specular: 0x444444,
+        }));
+        scene.add(frameMesh);
+      } catch (e) {
+        console.warn('Frame STL load error:', e);
+      }
     }
+
+    // All parsing is synchronous — fit camera once everything is in the scene
+    const loadingEl = document.getElementById('loading');
+    loadingEl.style.display = 'none';
+    fitCamera();
 
     // ── Auto-fit camera to combined bounding box ─────────────────────────────────
     function fitCamera() {

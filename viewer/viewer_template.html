@@ -9,74 +9,46 @@
     body { background: #1a1a2e; color: #e0e0e0; font-family: system-ui, sans-serif; overflow: hidden; }
     #canvas-container { width: 100vw; height: 100vh; }
     #overlay {
-      position: fixed;
-      top: 16px;
-      left: 16px;
-      background: rgba(0,0,0,0.6);
-      backdrop-filter: blur(6px);
-      border-radius: 8px;
-      padding: 12px 16px;
-      pointer-events: none;
-      line-height: 1.6;
+      position: fixed; top: 16px; left: 16px;
+      background: rgba(0,0,0,0.6); backdrop-filter: blur(6px);
+      border-radius: 8px; padding: 12px 16px;
+      pointer-events: none; line-height: 1.6;
     }
     #overlay h2 { font-size: 1rem; font-weight: 600; margin-bottom: 4px; color: #fff; }
     #overlay p  { font-size: 0.8rem; color: #aaa; }
     #controls {
-      position: fixed;
-      bottom: 16px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(0,0,0,0.5);
-      backdrop-filter: blur(6px);
-      border-radius: 6px;
-      padding: 6px 14px;
-      font-size: 0.75rem;
-      color: #888;
-      pointer-events: none;
+      position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.5); backdrop-filter: blur(6px);
+      border-radius: 6px; padding: 6px 14px;
+      font-size: 0.75rem; color: #888; pointer-events: none;
     }
     #terrain-controls {
-      position: fixed;
-      top: 16px;
-      right: 16px;
-      background: rgba(0,0,0,0.6);
-      backdrop-filter: blur(6px);
-      border-radius: 8px;
-      padding: 12px 16px;
-      min-width: 180px;
+      position: fixed; top: 16px; right: 16px;
+      background: rgba(0,0,0,0.6); backdrop-filter: blur(6px);
+      border-radius: 8px; padding: 12px 16px; min-width: 180px;
     }
     #terrain-controls label {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 0.8rem;
-      color: #aaa;
-      margin-bottom: 6px;
-      user-select: none;
+      display: flex; justify-content: space-between; align-items: center;
+      font-size: 0.8rem; color: #aaa; margin-bottom: 6px; user-select: none;
     }
     #terrain-controls label span { color: #fff; font-weight: 600; }
-    #opacity-slider {
-      width: 100%;
-      accent-color: #e66414;
-      cursor: pointer;
-    }
+    #opacity-slider { width: 100%; accent-color: #e66414; cursor: pointer; }
     #loading {
-      position: fixed;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      text-align: center;
-      color: #aaa;
-      font-size: 0.9rem;
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      text-align: center; color: #aaa; font-size: 0.9rem;
     }
     #loading .spinner {
-      width: 40px; height: 40px;
-      border: 3px solid #333;
-      border-top-color: #e66414;
-      border-radius: 50%;
-      animation: spin 0.8s linear infinite;
-      margin: 0 auto 12px;
+      width: 40px; height: 40px; border: 3px solid #333;
+      border-top-color: #e66414; border-radius: 50%;
+      animation: spin 0.8s linear infinite; margin: 0 auto 12px;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+    #error-msg {
+      position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: rgba(200,0,0,0.8); color: #fff; padding: 16px 20px;
+      border-radius: 8px; max-width: 80%; display: none;
+      font-size: 0.85rem; text-align: center;
+    }
   </style>
 </head>
 <body>
@@ -93,151 +65,159 @@
   <div id="controls">Left-drag: rotate &nbsp;·&nbsp; Scroll: zoom &nbsp;·&nbsp; Right-drag: pan</div>
 
   <div id="terrain-controls">
-    <label>
-      Terrain opacity
-      <span id="opacity-value">100%</span>
-    </label>
+    <label>Terrain opacity <span id="opacity-value">100%</span></label>
     <input id="opacity-slider" type="range" min="0" max="100" value="100" step="1" />
   </div>
 
-  <div id="loading">
-    <div class="spinner"></div>
-    Loading 3D models…
-  </div>
+  <div id="loading"><div class="spinner"></div>Loading 3D models…</div>
+  <div id="error-msg"></div>
 
-  <!-- Embedded asset data (injected by Python) -->
+  <!-- Asset data injected as a window property so it's accessible from ES modules -->
   <script>
-    const OBJ_TEXT     = {{OBJ_JSON}};
-    const TEX_DATA_URI = {{TEX_URI_JSON}};
-    const STL_B64      = {{STL_B64_JSON}};
-    const FRAME_B64    = {{FRAME_B64_JSON}};
+    window._3D_ASSETS = {
+      objText:  {{OBJ_JSON}},
+      texUri:   {{TEX_URI_JSON}},
+      stlB64:   {{STL_B64_JSON}},
+      frameB64: {{FRAME_B64_JSON}}
+    };
   </script>
 
-  <script type="importmap">
-  {
-    "imports": {
-      "three": "https://cdn.jsdelivr.net/npm/three@0.160/build/three.module.js",
-      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160/examples/jsm/"
-    }
-  }
-  </script>
-
+  <!-- Direct CDN imports — no importmap needed -->
   <script type="module">
-    import * as THREE from 'three';
-    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-    import { OBJLoader }     from 'three/addons/loaders/OBJLoader.js';
-    import { STLLoader }     from 'three/addons/loaders/STLLoader.js';
+    function showError(msg) {
+      const el = document.getElementById('error-msg');
+      el.textContent = msg;
+      el.style.display = 'block';
+      document.getElementById('loading').style.display = 'none';
+    }
 
-    // ── Renderer ────────────────────────────────────────────────────────────────
+    let THREE, OrbitControls, OBJLoader, STLLoader;
+    try {
+      THREE         = (await import('https://cdn.jsdelivr.net/npm/three@0.160/build/three.module.js')).default
+                   || await import('https://cdn.jsdelivr.net/npm/three@0.160/build/three.module.js');
+      const mods    = await Promise.all([
+        import('https://cdn.jsdelivr.net/npm/three@0.160/examples/jsm/controls/OrbitControls.js'),
+        import('https://cdn.jsdelivr.net/npm/three@0.160/examples/jsm/loaders/OBJLoader.js'),
+        import('https://cdn.jsdelivr.net/npm/three@0.160/examples/jsm/loaders/STLLoader.js'),
+      ]);
+      OrbitControls = mods[0].OrbitControls;
+      OBJLoader     = mods[1].OBJLoader;
+      STLLoader     = mods[2].STLLoader;
+    } catch (e) {
+      showError('Failed to load Three.js from CDN. Check your internet connection. ' + e);
+      throw e;
+    }
+
+    // Import * form for THREE to handle both default and named exports
+    if (!THREE) {
+      showError('THREE.js loaded but default export missing.');
+      throw new Error('THREE missing');
+    }
+
+    const { objText, texUri, stlB64, frameB64 } = window._3D_ASSETS;
+
+    // ── Renderer ────────────────────────────────────────────────────────────
     const container = document.getElementById('canvas-container');
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.shadowMap.enabled = true;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     container.appendChild(renderer.domElement);
 
-    // ── Scene & Camera ──────────────────────────────────────────────────────────
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x1a1a2e);
-
     const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 100000);
 
-    // ── Lights ──────────────────────────────────────────────────────────────────
     scene.add(new THREE.AmbientLight(0xffffff, 1.0));
-
     const sun = new THREE.DirectionalLight(0xfff5e0, 0.8);
     sun.position.set(1, -0.5, 2).normalize();
-    sun.castShadow = true;
     scene.add(sun);
+    scene.add(Object.assign(new THREE.DirectionalLight(0xc0d8ff, 0.3), {
+      position: new THREE.Vector3(-1, 1, 0.5).normalize()
+    }));
 
-    const fill = new THREE.DirectionalLight(0xc0d8ff, 0.3);
-    fill.position.set(-1, 1, 0.5).normalize();
-    scene.add(fill);
-
-    // ── Controls ────────────────────────────────────────────────────────────────
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
     controls.screenSpacePanning = true;
 
-    // ── Terrain opacity control ───────────────────────────────────────────────
+    // ── Terrain opacity ──────────────────────────────────────────────────────
     const terrainMaterials = [];
     const opacitySlider = document.getElementById('opacity-slider');
     const opacityValue  = document.getElementById('opacity-value');
-
     opacitySlider.addEventListener('input', () => {
       const pct = parseInt(opacitySlider.value, 10);
-      const opacity = pct / 100;
       opacityValue.textContent = pct + '%';
-      for (const mat of terrainMaterials) {
-        mat.opacity = opacity;
-        mat.transparent = opacity < 1.0;
-        mat.needsUpdate = true;
+      for (const m of terrainMaterials) {
+        m.opacity = pct / 100;
+        m.transparent = pct < 100;
+        m.needsUpdate = true;
       }
     });
 
-    // ── Load terrain (inline OBJ + embedded texture) ─────────────────────────
-    const textureLoader = new THREE.TextureLoader();
-    const texture = textureLoader.load(TEX_DATA_URI);
-    texture.colorSpace = THREE.SRGBColorSpace;
+    // ── Load terrain ─────────────────────────────────────────────────────────
+    try {
+      const texture = new THREE.TextureLoader().load(texUri);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      const clean = objText.split('\n').filter(l => !l.startsWith('mtllib')).join('\n');
+      const obj = new OBJLoader().parse(clean);
+      obj.traverse(child => {
+        if (child.isMesh) {
+          const m = new THREE.MeshLambertMaterial({ map: texture });
+          child.material = m;
+          child.receiveShadow = true;
+          terrainMaterials.push(m);
+        }
+      });
+      scene.add(obj);
+    } catch (e) {
+      console.warn('Terrain load error:', e);
+    }
 
-    const objText = OBJ_TEXT.split('\n').filter(l => !l.startsWith('mtllib')).join('\n');
-    const terrainObject = new OBJLoader().parse(objText);
-    terrainObject.traverse((child) => {
-      if (child.isMesh) {
-        const mat = new THREE.MeshLambertMaterial({ map: texture });
-        child.material = mat;
-        child.receiveShadow = true;
-        terrainMaterials.push(mat);
-      }
-    });
-    scene.add(terrainObject);
-
-    // ── Load track (inline STL) ───────────────────────────────────────────────
-    function stlToMesh(b64, material) {
+    // ── STL helper ──────────────────────────────────────────────────────────
+    function parseBinarySTL(b64) {
       const bin = atob(b64);
       const buf = new ArrayBuffer(bin.length);
       const view = new Uint8Array(buf);
       for (let i = 0; i < bin.length; i++) view[i] = bin.charCodeAt(i);
       const geo = new STLLoader().parse(buf);
       geo.computeVertexNormals();
-      return new THREE.Mesh(geo, material);
+      return geo;
     }
 
-    const trackMesh = stlToMesh(STL_B64, new THREE.MeshPhongMaterial({
-      color: 0xe66414, shininess: 80, specular: 0x552200,
-    }));
-    trackMesh.castShadow = true;
-    scene.add(trackMesh);
+    // ── Load track ───────────────────────────────────────────────────────────
+    try {
+      const geo = parseBinarySTL(stlB64);
+      const mesh = new THREE.Mesh(geo, new THREE.MeshPhongMaterial({
+        color: 0xe66414, shininess: 80, specular: 0x552200,
+      }));
+      mesh.castShadow = true;
+      scene.add(mesh);
+    } catch (e) {
+      console.warn('Track load error:', e);
+    }
 
-    // ── Load frame (inline STL, optional) ────────────────────────────────────
-    if (FRAME_B64) {
+    // ── Load frame ───────────────────────────────────────────────────────────
+    if (frameB64) {
       try {
-        const frameMesh = stlToMesh(FRAME_B64, new THREE.MeshPhongMaterial({
+        const geo = parseBinarySTL(frameB64);
+        scene.add(new THREE.Mesh(geo, new THREE.MeshPhongMaterial({
           color: 0xdddddd, shininess: 40, specular: 0x444444,
-        }));
-        scene.add(frameMesh);
+        })));
       } catch (e) {
-        console.warn('Frame STL load error:', e);
+        console.warn('Frame load error:', e);
       }
     }
 
-    // All parsing is synchronous — fit camera once everything is in the scene
-    const loadingEl = document.getElementById('loading');
-    loadingEl.style.display = 'none';
-    fitCamera();
-
-    // ── Auto-fit camera to combined bounding box ─────────────────────────────────
-    function fitCamera() {
+    // ── Fit camera ───────────────────────────────────────────────────────────
+    document.getElementById('loading').style.display = 'none';
+    (function fitCamera() {
       const box = new THREE.Box3().setFromObject(scene);
       if (box.isEmpty()) return;
       const centre = box.getCenter(new THREE.Vector3());
       const size   = box.getSize(new THREE.Vector3());
       const maxDim = Math.max(size.x, size.y, size.z);
-      const fov    = camera.fov * (Math.PI / 180);
-      const dist   = Math.abs(maxDim / (2 * Math.tan(fov / 2))) * 1.8;
-
+      const dist   = Math.abs(maxDim / (2 * Math.tan(camera.fov * Math.PI / 360))) * 1.8;
       camera.position.set(centre.x, centre.y - dist * 0.6, centre.z + dist * 0.5);
       camera.lookAt(centre);
       camera.near = dist * 0.001;
@@ -247,16 +227,16 @@
       controls.minDistance = dist * 0.05;
       controls.maxDistance = dist * 10;
       controls.update();
-    }
+    })();
 
-    // ── Resize handler ───────────────────────────────────────────────────────────
+    // ── Resize ───────────────────────────────────────────────────────────────
     window.addEventListener('resize', () => {
       camera.aspect = window.innerWidth / window.innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
     });
 
-    // ── Render loop ──────────────────────────────────────────────────────────────
+    // ── Render loop ──────────────────────────────────────────────────────────
     (function animate() {
       requestAnimationFrame(animate);
       controls.update();

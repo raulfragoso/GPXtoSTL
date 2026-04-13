@@ -97,6 +97,31 @@ def _rgb_to_rgb555(r: int, g: int, b: int) -> int:
     return 0x8000 | (r5 << 10) | (g5 << 5) | b5
 
 
+def _write_binary_stl(
+    mesh: trimesh.Trimesh,
+    stl_path: str,
+    header_text: bytes,
+    color_rgb: tuple[int, int, int] | None = None,
+) -> None:
+    """Write a binary STL; optionally embed RGB555 colour in the attribute bytes."""
+    vertices = mesh.vertices
+    faces = mesh.faces
+    face_normals = mesh.face_normals
+    attr = _rgb_to_rgb555(*color_rgb) if color_rgb else 0
+    n_tris = len(faces)
+
+    with open(stl_path, "wb") as fh:
+        fh.write(header_text[:80])
+        fh.write(struct.pack("<I", n_tris))
+        for i in range(n_tris):
+            nx, ny, nz = face_normals[i]
+            fh.write(struct.pack("<fff", nx, ny, nz))
+            for vi in faces[i]:
+                x, y, z = vertices[vi]
+                fh.write(struct.pack("<fff", x, y, z))
+            fh.write(struct.pack("<H", attr))
+
+
 def export_track_stl(
     mesh: trimesh.Trimesh,
     output_dir: str,
@@ -110,29 +135,20 @@ def export_track_stl(
     """
     os.makedirs(output_dir, exist_ok=True)
     stl_path = os.path.join(output_dir, "track.stl")
+    header = b"GPXtoSTL track mesh - orange" + b" " * 52
+    _write_binary_stl(mesh, stl_path, header, color_rgb)
+    return stl_path
 
-    vertices = mesh.vertices
-    faces = mesh.faces
-    face_normals = mesh.face_normals
 
-    attr = _rgb_to_rgb555(*color_rgb)
-    n_tris = len(faces)
-
-    with open(stl_path, "wb") as fh:
-        # 80-byte header
-        header = b"GPXtoSTL track mesh - orange                                                    "
-        fh.write(header[:80])
-        # Triangle count
-        fh.write(struct.pack("<I", n_tris))
-        # Per-triangle records
-        for i in range(n_tris):
-            nx, ny, nz = face_normals[i]
-            fh.write(struct.pack("<fff", nx, ny, nz))
-            for vi in faces[i]:
-                x, y, z = vertices[vi]
-                fh.write(struct.pack("<fff", x, y, z))
-            fh.write(struct.pack("<H", attr))
-
+def export_frame_stl(mesh: trimesh.Trimesh, output_dir: str) -> str:
+    """
+    Write the display frame mesh as a binary STL (no colour encoding).
+    Returns the path of the written file.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    stl_path = os.path.join(output_dir, "frame.stl")
+    header = b"GPXtoSTL display frame" + b" " * 58
+    _write_binary_stl(mesh, stl_path, header, color_rgb=None)
     return stl_path
 
 

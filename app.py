@@ -10,7 +10,8 @@ import streamlit as st
 
 import config as cfg
 from core.elevation_fetcher import fetch_elevation_grid
-from core.exporter import export_terrain_obj, export_track_stl, generate_viewer
+from core.exporter import export_terrain_obj, export_track_stl, export_frame_stl, generate_viewer
+from core.frame_builder import build_display_frame
 from core.gpx_parser import parse_gpx
 from core.mesh_builder import build_terrain_mesh, apply_hex_shape
 from core.tile_fetcher import fetch_satellite_image
@@ -103,9 +104,37 @@ with st.sidebar:
     )
 
     st.divider()
+    st.subheader("🖼️ Display frame")
+
+    generate_frame = st.checkbox(
+        "Generate display frame",
+        value=True,
+        help="A separate STL frame the terrain model slots into, with track info embossed on the front.",
+    )
+
+    frame_height = st.slider(
+        "Frame height (mm)",
+        min_value=5, max_value=30, value=15, step=1,
+        help="How tall the frame walls are.",
+    )
+
+    frame_wall = st.slider(
+        "Wall thickness (mm)",
+        min_value=3, max_value=10, value=5, step=1,
+        help="Thickness of the frame walls.",
+    )
+
+    frame_text_depth = st.slider(
+        "Text emboss depth (mm)",
+        min_value=0.2, max_value=1.0, value=0.4, step=0.1,
+        help="How much the text protrudes from the front face of the frame.",
+    )
+
+    st.divider()
     st.caption(
         "**Terrain**: OBJ + MTL with satellite texture.\n\n"
         "**Track**: Binary STL with RGB555 colour (orange).\n\n"
+        "**Frame**: Binary STL — print separately, then slot the terrain into it.\n\n"
         "STL natively has no colour support — the track uses the Materialise Magics "
         "convention (validity bit + RGB555 in the 2-byte attribute field).\n\n"
         "For full colour in MeshLab/Blender, use PLY."
@@ -266,6 +295,25 @@ if uploaded is not None:
 
             export_terrain_obj(terrain_carved, output_dir)
             export_track_stl(track_mesh, output_dir, color_rgb=track_color)
+
+            # 8. Display frame
+            if generate_frame:
+                progress.progress(92, text="Building display frame…")
+                tv = terrain_carved.vertices
+                frame_mesh = build_display_frame(
+                    terrain_width_mm=float(tv[:, 0].max() - tv[:, 0].min()),
+                    terrain_depth_mm=float(tv[:, 1].max() - tv[:, 1].min()),
+                    frame_height_mm=frame_height,
+                    wall_thickness_mm=frame_wall,
+                    text_lines=[
+                        gpx_data.name,
+                        f"{gpx_data.total_distance_m / 1000:.1f} km  ·  +{gpx_data.ele_gain_m:.0f} m",
+                    ],
+                    text_depth_mm=frame_text_depth,
+                )
+                export_frame_stl(frame_mesh, output_dir)
+                progress.progress(97, text="Frame built.")
+
             generate_viewer(
                 output_dir,
                 track_name=gpx_data.name,
@@ -295,12 +343,13 @@ if uploaded is not None:
             with open(path, "rb") as f:
                 return f.read()
 
-        obj_path = os.path.join(output_dir, "terrain.obj")
-        mtl_path = os.path.join(output_dir, "terrain.mtl")
-        tex_path = os.path.join(output_dir, "terrain_texture.jpg")
-        stl_path = os.path.join(output_dir, "track.stl")
+        obj_path   = os.path.join(output_dir, "terrain.obj")
+        mtl_path   = os.path.join(output_dir, "terrain.mtl")
+        tex_path   = os.path.join(output_dir, "terrain_texture.jpg")
+        stl_path   = os.path.join(output_dir, "track.stl")
+        frame_path = os.path.join(output_dir, "frame.stl")
 
-        dl_col1, dl_col2, dl_col3, dl_col4 = st.columns(4)
+        dl_col1, dl_col2, dl_col3, dl_col4, dl_col5 = st.columns(5)
         if os.path.exists(obj_path):
             dl_col1.download_button("terrain.obj", _read(obj_path), "terrain.obj", "text/plain", key="dl_obj")
         if os.path.exists(mtl_path):
@@ -309,6 +358,8 @@ if uploaded is not None:
             dl_col3.download_button("terrain_texture.jpg", _read(tex_path), "terrain_texture.jpg", "image/jpeg", key="dl_tex")
         if os.path.exists(stl_path):
             dl_col4.download_button("track.stl", _read(stl_path), "track.stl", "application/octet-stream", key="dl_stl")
+        if os.path.exists(frame_path):
+            dl_col5.download_button("frame.stl", _read(frame_path), "frame.stl", "application/octet-stream", key="dl_frame")
 
         viewer_html_path = os.path.join(output_dir, "viewer.html")
         if os.path.exists(viewer_html_path):

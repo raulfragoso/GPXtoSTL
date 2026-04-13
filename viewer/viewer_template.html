@@ -107,9 +107,10 @@
 
   <!-- Embedded asset data (injected by Python) -->
   <script>
-    const OBJ_TEXT    = {{OBJ_JSON}};
+    const OBJ_TEXT     = {{OBJ_JSON}};
     const TEX_DATA_URI = {{TEX_URI_JSON}};
-    const STL_B64     = {{STL_B64_JSON}};
+    const STL_B64      = {{STL_B64_JSON}};
+    const FRAME_B64    = {{FRAME_B64_JSON}};
   </script>
 
   <script type="importmap">
@@ -162,10 +163,11 @@
 
     // ── Loading tracker ──────────────────────────────────────────────────────────
     const loadingEl = document.getElementById('loading');
+    const totalAssets = FRAME_B64 ? 3 : 2;
     let loaded = 0;
     function onLoaded() {
       loaded++;
-      if (loaded >= 2) {
+      if (loaded >= totalAssets) {
         loadingEl.style.display = 'none';
         fitCamera();
       }
@@ -226,6 +228,25 @@
     trackMesh.castShadow = true;
     scene.add(trackMesh);
     onLoaded();
+
+    // ── Load frame (inline STL, optional) ────────────────────────────────────────
+    if (FRAME_B64) {
+      const frameBin = atob(FRAME_B64);
+      const frameBuf = new ArrayBuffer(frameBin.length);
+      const frameView = new Uint8Array(frameBuf);
+      for (let i = 0; i < frameBin.length; i++) frameView[i] = frameBin.charCodeAt(i);
+
+      const frameGeo = new STLLoader().parse(frameBuf);
+      frameGeo.computeVertexNormals();
+      const frameMat = new THREE.MeshPhongMaterial({
+        color: 0xdddddd,
+        shininess: 40,
+        specular: 0x444444,
+      });
+      const frameMesh = new THREE.Mesh(frameGeo, frameMat);
+      scene.add(frameMesh);
+      onLoaded();
+    }
 
     // ── Auto-fit camera to combined bounding box ─────────────────────────────────
     function fitCamera() {

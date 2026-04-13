@@ -178,9 +178,10 @@ def generate_viewer(
         html = fh.read()
 
     # Read and embed the generated assets
-    obj_path = os.path.join(output_dir, "terrain.obj")
-    tex_path = os.path.join(output_dir, "terrain_texture.jpg")
-    stl_path = os.path.join(output_dir, "track.stl")
+    obj_path   = os.path.join(output_dir, "terrain.obj")
+    tex_path   = os.path.join(output_dir, "terrain_texture.jpg")
+    stl_path   = os.path.join(output_dir, "track.stl")
+    frame_path = os.path.join(output_dir, "frame.stl")
 
     with open(obj_path, "r", encoding="utf-8") as f:
         obj_text = f.read()
@@ -188,6 +189,11 @@ def generate_viewer(
         tex_b64 = base64.b64encode(f.read()).decode("ascii")
     with open(stl_path, "rb") as f:
         stl_b64 = base64.b64encode(f.read()).decode("ascii")
+
+    frame_b64 = ""
+    if os.path.exists(frame_path):
+        with open(frame_path, "rb") as f:
+            frame_b64 = base64.b64encode(f.read()).decode("ascii")
 
     tex_data_uri = f"data:image/jpeg;base64,{tex_b64}"
 
@@ -198,6 +204,7 @@ def generate_viewer(
     html = html.replace("{{OBJ_JSON}}", json.dumps(obj_text))
     html = html.replace("{{TEX_URI_JSON}}", json.dumps(tex_data_uri))
     html = html.replace("{{STL_B64_JSON}}", json.dumps(stl_b64))
+    html = html.replace("{{FRAME_B64_JSON}}", json.dumps(frame_b64))
 
     with open(viewer_path, "w", encoding="utf-8") as fh:
         fh.write(html)
